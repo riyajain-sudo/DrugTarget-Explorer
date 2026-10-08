@@ -1,4 +1,4 @@
-# Drug Discovery Tool
+# DrugTarget-Explorer
 
 ML/GenAI web app that predicts bioactivity, toxicity and drug-likeness for a molecule (with SHAP-based explanations and a plain-English summary) and suggests approved drugs that could be repurposed for a disease.
 
