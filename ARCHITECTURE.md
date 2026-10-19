@@ -36,8 +36,8 @@ The app has two features.
 
 **Predict a molecule.** The user pastes a SMILES string or draws a structure. The app returns:
 
-- **Bioactivity**: the probability that the molecule inhibits each of six kinases (EGFR, ABL1, CDK2, SRC, VEGFR2, BRAF) at IC50 ≤ 1 µM.
-- **Toxicity**: the probability of a positive result on 13 endpoints (12 Tox21 assays plus ClinTox clinical-trial toxicity).
+- **Bioactivity**: an uncalibrated 0–1 model score for each kinase (EGFR, ABL1, CDK2, SRC, VEGFR2, BRAF) at IC50 ≤ 1 µM.
+- **Toxicity**: uncalibrated 0–1 model scores for positive results on 13 endpoints (12 Tox21 assays plus ClinTox clinical-trial toxicity).
 - **Drug-likeness**: Lipinski's rule of five, Veber's rules and the QED score.
 - **Explanations**: for every prediction, the features that pushed it up or down (SHAP), plus a 2–3 sentence plain-English summary written by Gemini from that SHAP output.
 
@@ -46,7 +46,7 @@ drugs that might be worth investigating for it, each with reasons in plain langu
 
 - "Shares target Tyrosine-protein kinase ABL1 with 5 known treatments: ASCIMINIB, BOSUTINIB, DASATINIB and 2 more"
 - "Structurally similar (Tanimoto 0.78) to ALOGLIPTIN, approved for Diabetes Mellitus, Type 2"
-- "Bioactivity model predicts 92% probability of ABL1 activity (IC50 <= 1 uM)"
+- "Bioactivity model score for ABL1 activity is 0.92 (uncalibrated; IC50 <= 1 uM)"
 
 All output is a computational hypothesis, not laboratory or clinical evidence. The UI and API say so.
 
@@ -176,7 +176,7 @@ drug_discovery/
 |---|---|---|---|
 | Cheminformatics | RDKit | 2026.03 | SMILES parsing, fingerprints, descriptors, QED, structure drawing |
 | ML | XGBoost | 3.4 | Gradient-boosted tree classifiers |
-| ML utilities | scikit-learn | 1.9 | Metrics (ROC AUC, PR AUC, accuracy) |
+| ML utilities | scikit-learn | 1.9 | Metrics (ROC AUC, average precision, accuracy) |
 | Explainability | SHAP | 0.52 | `TreeExplainer` on the XGBoost models |
 | LLM | Gemini via `google-genai` | model `gemini-2.5-flash` (configurable) | Plain-English summaries |
 | Backend | FastAPI + Uvicorn | 0.141 | REST API |
@@ -299,7 +299,7 @@ VEGFR2 is weak: its accuracy barely exceeds the baseline, though the AUC of 0.77
 
 Same algorithm and hyper-parameters, with one addition: `scale_pos_weight = (#negatives / #positives)` on the training rows, because positives are rare (3–16%). Each endpoint gets its own scaffold split over *its own labelled rows*. Artifact: `app/models/toxicity.pkl` (`models`, `descriptions`, `feature_names`, `metrics`) plus `toxicity.metrics.json`.
 
-| Endpoint | Labelled train / test | Positive rate | ROC AUC | PR AUC | PR baseline (test positive rate) |
+| Endpoint | Labelled train / test | Positive rate | ROC AUC | Average precision (AP) | Test positive rate baseline |
 |---|---|---|---|---|---|
 | NR-AR | 5,804 / 1,454 | 4.2% | 0.772 | 0.411 | 0.039 |
 | NR-AR-LBD | 5,394 / 1,357 | 3.5% | 0.859 | 0.481 | 0.035 |
@@ -315,7 +315,7 @@ Same algorithm and hyper-parameters, with one addition: `scale_pos_weight = (#ne
 | SR-p53 | 5,414 / 1,353 | 6.3% | 0.794 | 0.385 | 0.078 |
 | ClinTox | 1,184 / 296 | 7.6% | 0.716 | 0.387 | 0.061 |
 
-Mean ROC AUC over the 13 endpoints is **0.783**, in the range usually reported for Tox21 on scaffold splits. PR AUC is reported because ROC AUC can look good on rare positives; here PR AUC exceeds its baseline on all 13 endpoints. NR-ER (AUC 0.667) and ClinTox (0.716, only 296 test molecules) are the weakest.
+Mean ROC AUC over the 13 endpoints is **0.783**, in the range usually reported for Tox21 on scaffold splits. Average precision (scikit-learn `average_precision_score`, a recall-increment-weighted estimator) is reported because ROC AUC can look good on rare positives; the stored historical values exceed the test positive-rate baseline on all 13 endpoints. The `toxicity.metrics.json` key was renamed from `pr_auc` to `average_precision` and its baseline key to `test_positive_rate_baseline`; values were preserved, not recomputed, as part of these code changes. NR-ER (AUC 0.667) and ClinTox (0.716, only 296 test molecules) are the weakest.
 
 ### 7.4 Scaffold splitting (why the metrics are honest)
 
@@ -349,8 +349,8 @@ sequenceDiagram
     A->>F: featurize(smiles)
     F-->>A: 2055-value vector (or ValueError -> HTTP 422)
     A->>M: predict_proba for every endpoint
-    M-->>A: {endpoint: probability}
-    A->>A: sort by probability, label positive/negative (threshold 0.5),<br/>attach confidence and model test AUC
+    M-->>A: {endpoint: uncalibrated predict_proba score}
+    A->>A: sort by model score, label positive/negative (threshold 0.5),<br/>attach held-out ranking AUC
     A->>S: explain() for the top-N endpoints
     S-->>A: SHAP contributions per endpoint
     A->>L: build_context(top endpoint, its SHAP output)
@@ -362,12 +362,12 @@ sequenceDiagram
 
 Step by step for `POST /predict/bioactivity` and `/predict/toxicity` (`app/routers/predict.py`, function `_run`):
 
-1. **Validate** the request (Pydantic): `smiles` 1–500 characters; `explain_top_n` 0–13 (default 3); `top_k_features` 1–25 (default 8); `include_llm_explanation` (default true).
+1. **Validate** the request (Pydantic): `smiles` 1–500 characters; `explain_top_n` 0–13 (default 3); `top_k_features` 1–25 (default 8); `include_llm_explanation` (default false; explicit opt-in).
 2. **Featurize** the SMILES once per model call. Invalid SMILES → HTTP 422 with `Invalid SMILES: '...'`.
-3. **Score** every model in the bundle: `predict_proba(x)[0, 1]` gives P(positive class). Bioactivity's positive class is *active*; toxicity's is *toxic*.
-4. **Label**: probability ≥ 0.5 → positive label (`active` / `toxic`), otherwise negative (`inactive` / `non-toxic`).
-5. **Confidence** = `max(p, 1 − p)`, the distance from the decision boundary. This is **not** a calibrated certainty (see Section 19). Each prediction also carries `model_test_auc`, the endpoint's held-out ROC AUC, so the reader can judge how much to trust that particular model.
-6. **Sort** endpoints by probability, highest first.
+3. **Score** every model in the bundle: `predict_proba(x)[0, 1]` is returned as an uncalibrated 0–1 model score. No calibration evaluation is reported, so the score is not a validated event probability.
+4. **Label**: model score ≥ 0.5 → positive label (`active` / `toxic`), otherwise negative (`inactive` / `non-toxic`).
+5. Each prediction includes `model_test_auc`, a held-out ROC-AUC ranking metric. It is not confidence in an individual result and does not establish calibration. The old threshold-distance `confidence` field is no longer returned.
+6. **Sort** endpoints by model score, highest first.
 7. **Explain** the top `explain_top_n` endpoints with SHAP (Section 9).
 8. **Summarise** the single top endpoint in plain English (Section 10) and attach it as `plain_english_explanation`.
 9. Toxicity additionally returns `flagged_endpoints` (all positive endpoints) and `overall` (`"toxicity alerts"` / `"no toxicity alerts"`). Bioactivity returns a `threshold` note (`active = IC50 <= 1 uM (pIC50 >= 6)`).
@@ -388,13 +388,12 @@ Step by step for `POST /predict/bioactivity` and `/predict/toxicity` (`app/route
 SHAP assigns each feature a contribution to one prediction such that
 
 ```
-baseline (log-odds)  +  Σ feature contributions  =  the model's raw output (log-odds)
-probability          =  sigmoid(raw output)
+SHAP base logit  +  Σ feature contributions  =  the model's raw output (log-odds)
 ```
 
-For tree ensembles, `shap.TreeExplainer` computes these exactly and quickly. Contributions are in **log-odds** (XGBoost's native margin): a positive value pushes the prediction toward the positive class (active / toxic), a negative value pushes away. The baseline is the model's average output over its training data; `base_probability` in the response is `sigmoid(baseline)`.
+For tree ensembles, `shap.TreeExplainer` computes model contributions. Contributions and `base_logit` are in **log-odds** (XGBoost's native margin): positive values push toward the positive class (active / toxic), negative values push away. Applying sigmoid to the expected raw output does not produce an average-molecule probability; the API returns `base_logit` only. The model's 0–1 `model_score` is not calibration-validated.
 
-The additivity identity is verified: for erlotinib on EGFR, `sigmoid(baseline + Σ SHAP)` reproduces the model probability exactly (0.963).
+The model-space SHAP additivity identity is checked by tests; this is not evidence of probability calibration.
 
 ### 9.2 Making Morgan bits readable
 
@@ -407,14 +406,14 @@ The output label is then `contains substructure cNc(cc)cc`. Descriptor features 
 
 ### 9.3 What is reported
 
-- Only features that are **present** are listed: the 7 descriptors and the fingerprint bits that are set. Absent bits (the vast majority) carry no readable meaning.
+- Only descriptors and present fingerprint bits are human-labelled. The response/chart explicitly describe this as a filtered, heuristic subset and report the absolute SHAP mass/count omitted for absent fingerprint bits.
 - Contributions are sorted by absolute value and cut to `top_k_features` (default 8; the frontend also uses 8).
 - Each item: `feature`, `label`, `type` (`descriptor` / `substructure`), `value`, `shap`, `direction` (`increases` / `decreases`).
-- The response also carries `probability`, `base_probability` and `base_logit`.
+- The response also carries `model_score`, `base_logit`, `omitted_abs_shap_mass`, and `omitted_absent_bit_count`; no calibrated-probability baseline is returned.
 
 ### 9.4 Caveats
 
-- One fragment is shown per bit even if several parts of the molecule (or different substructures colliding on the same folded bit) share it.
+- One fragment is shown per set bit even if several parts of the molecule (or different substructures colliding on the same folded bit) share it. This is an interpretable heuristic, not a complete atom-level decomposition.
 - SHAP explains **what the model associates with the outcome**, not biological mechanism. A small fragment such as `CCO` scoring high for EGFR is a statistical association in this dataset, not a claim about how the drug works.
 - Command-line check: `python -m app.ml.explain "<SMILES>" bioactivity EGFR` prints the contributions and saves a bar chart PNG to `backend/data/`.
 
@@ -434,8 +433,9 @@ The LLM never sees the molecule and never predicts anything. `build_context()` a
   "endpoint": "NR-ER",
   "endpoint_description": "Estrogen receptor signaling",
   "predicted_class": "toxic",
-  "probability_of_positive_class": 0.9447,
-  "baseline_probability_for_average_molecule": 0.537,
+  "uncalibrated_model_score": 0.9447,
+  "shap_base_logit": 0.148,
+  "explanation_scope": "top SHAP among descriptors and present fragments; heuristic, filtered",
   "model_test_auc": 0.667,
   "top_shap_features": [
     {"feature": "contains substructure cccc(O)c", "effect": "increases", "shap_log_odds": 1.075}
@@ -448,7 +448,7 @@ The system prompt enforces:
 
 - Use **only** the provided data; add no biological mechanisms, drug facts, disease links or chemistry from memory.
 - Describe features as "the model associates X with Y", never as proven causes.
-- Mention the probability; quote the AUC number but use no reliability adjectives such as "highly reliable"; add "only moderately reliable" only when the AUC is below 0.75.
+- Call the output an uncalibrated model score, not a probability of correctness. ROC AUC describes ranking discrimination only; do not call it reliability or case-level certainty.
 - The final sentence must always be exactly: *"This is a computational prediction, not a lab result."*
 - 2–3 sentences, no markdown.
 
@@ -465,7 +465,7 @@ Any failure (missing key, network error, timeout, empty reply) is caught and log
 "plain_english_explanation": {"text": "...", "source": "template", "model": null}
 ```
 
-The prediction API therefore never fails because of the LLM. Send `"include_llm_explanation": false` to skip the call (the tests do this).
+The prediction API therefore never fails because of the LLM. `include_llm_explanation` defaults to `false`; the client explicitly sends `true` only when the user checks the opt-in. Derived model scores, descriptor/fragment labels, and SHAP summaries may be sent to Google Gemini; raw SMILES is not included. A template is used when opted in but Gemini is unavailable.
 
 ### 10.4 What is and is not guaranteed
 
@@ -544,7 +544,7 @@ Three signals, each in [0, 1]:
 |---|---|---|
 | `target` | for the candidate's shared targets, the best `support(t) / max support over T`. The target that most known treatments act on scores 1.0. | 0.5 |
 | `similarity` | max Tanimoto to any drug in K | 0.3 |
-| `model` | the bioactivity model's P(active) for the candidate on a shared target, **only when that target is one of the six modelled kinases** (matched by ChEMBL ID) | 0.2 |
+| `model` | the bioactivity model's uncalibrated 0–1 active score for the candidate on a shared target, **only when that target is one of the six modelled kinases** (matched by ChEMBL ID) | 0.2 |
 
 `score = Σ (weight × signal) / Σ weights` over the signals that exist, so when the model signal is unavailable the remaining weights are renormalised (0.5 and 0.3 become 0.625 and 0.375). Scores lie in [0, 1]. For non-kinase diseases the score therefore has no ML component; it is target overlap plus fingerprint similarity.
 
@@ -554,7 +554,7 @@ Each candidate carries human-readable reasons generated from the same numbers:
 
 - Up to two shared-target reasons, strongest first: `Shares target <name> [UniProt <accession>] with N known treatment(s) for <disease>: <up to 3 names> and M more`.
 - A similarity reason when Tanimoto ≥ 0.40: `Structurally similar (Tanimoto 0.78) to <known drug>, approved for <disease>`.
-- A model reason when available: `Bioactivity model predicts 92% probability of ABL1 activity (IC50 <= 1 uM)`.
+- A model reason when available: `Bioactivity model score is 0.92 for ABL1 activity (uncalibrated; IC50 <= 1 uM)`.
 
 The response also includes the underlying `signals`, the `shared_targets`, the `most_similar_known_drug` (name, ChEMBL ID, SMILES, Tanimoto, used by the UI to draw the side-by-side structures), and `currently_approved_for` (up to 5 of the candidate's own indications).
 
@@ -592,12 +592,14 @@ Base URL `http://localhost:8000`. Interactive documentation with a "Try it out" 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | Liveness check → `{"status": "ok"}` |
+| GET | `/ready` | Artifact-file presence for both model bundles and the repurposing database; does not deserialize them |
 | POST | `/predict/bioactivity` | Per-kinase predictions + SHAP + explanation |
 | POST | `/predict/toxicity` | 13 toxicity endpoints + SHAP + explanation |
 | POST | `/predict/druglikeness` | Lipinski / Veber / QED |
 | GET | `/repurpose/{disease}?top_n=10` | Ranked repurposing candidates (`top_n` 1–50) |
 | GET | `/diseases?q=&limit=15` | Disease-name search for the UI dropdown, most-treated first (`limit` 1–50) |
 | GET | `/molecule/svg?smiles=&width=320&height=240` | Structure image (SVG, transparent background, cached 24 h) |
+| GET | `/molecule/info?smiles=` | Molecule identity/formula and optional local approved-drug match |
 
 ### 14.1 `POST /predict/bioactivity` and `/predict/toxicity`
 
@@ -614,11 +616,11 @@ Response (abridged; values are from bisphenol A, and the `feature` id is illustr
   "smiles": "...",
   "predictions": [
     {"endpoint": "NR-ER-LBD", "description": "Estrogen receptor (ligand-binding domain)",
-     "probability": 0.9814, "prediction": "toxic", "confidence": 0.9814, "model_test_auc": 0.829}
+     "model_score": 0.9814, "prediction": "toxic", "model_test_auc": 0.829}
   ],
   "explanations": [
-    {"kind": "toxicity", "endpoint": "NR-ER", "smiles": "...", "probability": 0.9447,
-     "base_probability": 0.537, "base_logit": 0.148,
+    {"kind": "toxicity", "endpoint": "NR-ER", "smiles": "...", "model_score": 0.9447,
+     "base_logit": 0.148,
      "contributions": [
        {"feature": "morgan_123", "label": "contains substructure cccc(O)c", "type": "substructure",
         "value": 1.0, "shap": 1.075, "direction": "increases"}]}
@@ -660,7 +662,7 @@ React 19 single-page app built with Vite; styling is Tailwind CSS 4 utility clas
 
 1. `MoleculeInput` collects a SMILES (paste tab, or the Ketcher drawing tab). Five one-click examples are provided. In draw mode the SMILES is read from the editor with `ketcher.getSmiles()`; switching tabs carries the molecule across.
 2. `analyzeMolecule` (`api/client.js`) calls the three endpoints **in parallel** (`Promise.all`): bioactivity with `explain_top_n = 6`, toxicity with `explain_top_n = 13` (so every card has a SHAP breakdown ready), and drug-likeness.
-3. Results layout: left column with the structure image and the drug-likeness card; right column with a **Bioactivity** and a **Toxicity** section. Each section shows the Gemini summary, a grid of `ResultCard`s (probability bar, label, held-out test AUC), and a `ShapChart` for the selected card. Clicking a card switches the chart.
+3. Results layout: left column with the structure image and the drug-likeness card; right column with a **Bioactivity** and a **Toxicity** section. Each section shows an opt-in Gemini summary, a grid of `ResultCard`s (uncalibrated model-score bar, label, held-out test AUC), and a `ShapChart` for the selected card. Clicking a card switches the chart.
 4. Loading and error states are shown explicitly; an invalid SMILES shows the backend's message.
 
 ### 15.2 Repurpose page (`pages/RepurposePage.jsx`)
@@ -676,7 +678,7 @@ React 19 single-page app built with Vite; styling is Tailwind CSS 4 utility clas
 |---|---|
 | `MoleculeInput` | Paste/draw tabs, examples, validation, submit |
 | `KetcherEditor` | Ketcher (`ketcher-react` + `ketcher-standalone`, an in-browser chemistry service); **lazy-loaded** with `React.lazy` because Ketcher is several MB |
-| `ResultCard` | One endpoint: badge, probability bar, test AUC; selectable |
+| `ResultCard` | One endpoint: badge, uncalibrated model-score bar, test AUC; selectable |
 | `ShapChart` | Diverging bar chart (red = toward positive class, blue = away), values in SHAP log-odds |
 | `StructureImage` | `<img>` pointing at `/molecule/svg`; graceful fallback if it fails |
 | `ThemeToggle` | Light/dark switch |
@@ -769,11 +771,11 @@ Run from `backend` with the venv's Python: the `app` package lives there and the
 
 **Models**
 
-- **Kinase-only bioactivity.** The six models know only kinase chemistry. A molecule far from kinase inhibitors still gets six probabilities; there is no applicability-domain check to say "outside what this model knows".
+- **Kinase-only bioactivity.** The six models know only kinase chemistry. A molecule far from kinase inhibitors still gets six uncalibrated model scores; there is no applicability-domain check to say "outside what this model knows".
 - **Weak spots:** VEGFR2 (accuracy ≈ baseline, AUC 0.77), NR-ER (AUC 0.67), ClinTox (AUC 0.72 on 296 test molecules).
-- **ClinTox labels are noisy.** Aspirin is labelled `CT_TOX = 1` (not approved) in the dataset, and the model reproduces that (≈0.85 "fails clinical trials due to toxicity"). On 300 other approved non-toxic drugs the model flags only 2%, but the endpoint is unreliable.
-- **ClinTox can dominate the toxicity summary.** The plain-English toxicity explanation covers the highest-scoring endpoint, which is often ClinTox; erlotinib, an approved drug, was summarised as ~95% likely to fail trials due to toxicity. Ranking Tox21 endpoints ahead of ClinTox for the headline, and labelling ClinTox low-confidence, is a recommended fix.
-- **Probabilities are not calibrated.** The toxicity models use `scale_pos_weight`, which shifts probabilities upward, so the 0.5 threshold flags more molecules than a calibrated model would (erlotinib flags seven of the 13 endpoints). "Confidence" is `max(p, 1 − p)`, not a probability that the answer is correct. Use `model_test_auc`, and treat probabilities as ranking scores.
+- **ClinTox labels are noisy.** Historical checks on Aspirin and approved drugs are illustrative only and are not independent evaluation; the endpoint should not be interpreted as a clinical failure probability.
+- **ClinTox can dominate the toxicity summary.** The plain-English toxicity explanation covers the highest-scoring endpoint, which can be ClinTox. That score is an uncalibrated model output, not a likelihood that a compound will fail a clinical trial.
+- **No probability calibration or applicability-domain estimate.** The toxicity models use `scale_pos_weight`; reported held-out ROC AUC is a ranking metric only. The API and UI call 0–1 outputs uncalibrated model scores and do not return a confidence-in-correctness field.
 - **Known drugs may be in the training data.** Well-known molecules such as erlotinib and imatinib probably appear in the ChEMBL training set, so sanity checks on them are not independent tests.
 - **Small, single-family data.** 8,762 kinase measurements across six targets; results say nothing about other target classes.
 - **Activity threshold.** "Active" is IC50 ≤ 1 µM from mixed assay types in ChEMBL, which is a simplification.

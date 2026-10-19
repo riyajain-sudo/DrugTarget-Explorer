@@ -4,103 +4,103 @@
     "n_test": 1454,
     "positive_rate": 0.04243593276384679,
     "roc_auc": 0.7716508277130594,
-    "pr_auc": 0.41083839369052805,
-    "pr_auc_baseline": 0.03851444291609354
+    "average_precision": 0.41083839369052805,
+    "test_positive_rate_baseline": 0.03851444291609354
   },
   "NR-AR-LBD": {
     "n_train": 5394,
     "n_test": 1357,
     "positive_rate": 0.03510591023552066,
     "roc_auc": 0.8587980646804175,
-    "pr_auc": 0.48088611128866976,
-    "pr_auc_baseline": 0.03537214443625645
+    "average_precision": 0.48088611128866976,
+    "test_positive_rate_baseline": 0.03537214443625645
   },
   "NR-AhR": {
     "n_train": 5234,
     "n_test": 1308,
     "positive_rate": 0.11739529195964536,
     "roc_auc": 0.8506287367816336,
-    "pr_auc": 0.5620957496152534,
-    "pr_auc_baseline": 0.1643730886850153
+    "average_precision": 0.5620957496152534,
+    "test_positive_rate_baseline": 0.1643730886850153
   },
   "NR-Aromatase": {
     "n_train": 4353,
     "n_test": 1462,
     "positive_rate": 0.051590713671539126,
     "roc_auc": 0.7615384615384616,
-    "pr_auc": 0.14209950451276895,
-    "pr_auc_baseline": 0.03556771545827633
+    "average_precision": 0.14209950451276895,
+    "test_positive_rate_baseline": 0.03556771545827633
   },
   "NR-ER": {
     "n_train": 4429,
     "n_test": 1757,
     "positive_rate": 0.12786938247655996,
     "roc_auc": 0.6665086415534864,
-    "pr_auc": 0.3498636266547692,
-    "pr_auc_baseline": 0.1309049516220831
+    "average_precision": 0.3498636266547692,
+    "test_positive_rate_baseline": 0.1309049516220831
   },
   "NR-ER-LBD": {
     "n_train": 5555,
     "n_test": 1393,
     "positive_rate": 0.05023028209556707,
     "roc_auc": 0.8289959448263834,
-    "pr_auc": 0.565794438948409,
-    "pr_auc_baseline": 0.07681263460157932
+    "average_precision": 0.565794438948409,
+    "test_positive_rate_baseline": 0.07681263460157932
   },
   "NR-PPAR-gamma": {
     "n_train": 5155,
     "n_test": 1288,
     "positive_rate": 0.028868539500232812,
     "roc_auc": 0.8133111594973169,
-    "pr_auc": 0.2109336218513157,
-    "pr_auc_baseline": 0.036490683229813664
+    "average_precision": 0.2109336218513157,
+    "test_positive_rate_baseline": 0.036490683229813664
   },
   "SR-ARE": {
     "n_train": 3262,
     "n_test": 2563,
     "positive_rate": 0.16171673819742488,
     "roc_auc": 0.7644757248065382,
-    "pr_auc": 0.38772826544282724,
-    "pr_auc_baseline": 0.1334373780725712
+    "average_precision": 0.38772826544282724,
+    "test_positive_rate_baseline": 0.1334373780725712
   },
   "SR-ATAD5": {
     "n_train": 5652,
     "n_test": 1413,
     "positive_rate": 0.037367303609341825,
     "roc_auc": 0.7563193673695894,
-    "pr_auc": 0.15466988387695693,
-    "pr_auc_baseline": 0.03750884642604388
+    "average_precision": 0.15466988387695693,
+    "test_positive_rate_baseline": 0.03750884642604388
   },
   "SR-HSE": {
     "n_train": 5167,
     "n_test": 1293,
     "positive_rate": 0.057585139318885446,
     "roc_auc": 0.745613257710032,
-    "pr_auc": 0.29884346912612003,
-    "pr_auc_baseline": 0.06496519721577726
+    "average_precision": 0.29884346912612003,
+    "test_positive_rate_baseline": 0.06496519721577726
   },
   "SR-MMP": {
     "n_train": 3555,
     "n_test": 2249,
     "positive_rate": 0.15816678152997932,
     "roc_auc": 0.8490582747431044,
-    "pr_auc": 0.5983193372169189,
-    "pr_auc_baseline": 0.17785682525566918
+    "average_precision": 0.5983193372169189,
+    "test_positive_rate_baseline": 0.17785682525566918
   },
   "SR-p53": {
     "n_train": 5414,
     "n_test": 1353,
     "positive_rate": 0.06250923599822669,
     "roc_auc": 0.7937389357098545,
-    "pr_auc": 0.3849980296998849,
-    "pr_auc_baseline": 0.07834441980783444
+    "average_precision": 0.3849980296998849,
+    "test_positive_rate_baseline": 0.07834441980783444
   },
   "ClinTox": {
     "n_train": 1184,
     "n_test": 296,
     "positive_rate": 0.07567567567567568,
     "roc_auc": 0.7161270983213429,
-    "pr_auc": 0.38730652030006896,
-    "pr_auc_baseline": 0.060810810810810814
+    "average_precision": 0.38730652030006896,
+    "test_positive_rate_baseline": 0.060810810810810814
   }
 }

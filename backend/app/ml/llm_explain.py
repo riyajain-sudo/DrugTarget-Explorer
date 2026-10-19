@@ -30,9 +30,8 @@ Strict rules:
 - Describe features as "the model associates X with Y", never as proven causes.
 - "increases" means the feature pushed the prediction toward the positive class; "decreases" means away from it.
 - Refer to substructures by their SMILES fragment, e.g. "a c-N-c linkage (cNc)", and to descriptors by value.
-- Mention the probability. If model_test_auc is given, quote the number but do not describe the model
-  with reliability adjectives such as "highly reliable"; only if it is below 0.75 add that the model is
-  only moderately reliable for this endpoint.
+- Call the 0-1 output an uncalibrated model score, not a probability of correctness. A test ROC AUC
+  describes ranking discrimination only; do not describe it as case-level certainty or reliability.
 - The FINAL sentence must always be exactly: "This is a computational prediction, not a lab result."
 - No headings, bullet points or markdown. 2-3 sentences total, including that final sentence."""
 
@@ -45,8 +44,10 @@ def build_context(kind: str, prediction: dict, explanation: dict, other_flagged:
         "endpoint": prediction["endpoint"],
         "endpoint_description": prediction.get("description"),
         "predicted_class": prediction["prediction"],
-        "probability_of_positive_class": prediction["probability"],
-        "baseline_probability_for_average_molecule": round(explanation["base_probability"], 3),
+        "uncalibrated_model_score": prediction["model_score"],
+        "shap_base_logit": round(explanation["base_logit"], 3),
+        "explanation_scope": explanation["contribution_view"],
+        "omitted_absent_bit_shap_mass": round(explanation["omitted_abs_shap_mass"], 3),
         "model_test_auc": prediction.get("model_test_auc"),
         "top_shap_features": [
             {"feature": c["label"], "effect": c["direction"], "shap_log_odds": round(c["shap"], 3)}
@@ -65,15 +66,13 @@ def template_explanation(ctx: dict) -> str:
     feats = ctx["top_shap_features"]
     ups = [f["feature"] for f in feats if f["effect"] == "increases"][:2]
     downs = [f["feature"] for f in feats if f["effect"] == "decreases"][:1]
-    s = (f"The model predicts this molecule is {ctx['predicted_class']} for {ctx['endpoint']} "
-         f"({ctx['probability_of_positive_class']:.0%} probability, versus a {ctx['baseline_probability_for_average_molecule']:.0%} "
-         f"baseline for an average molecule).")
+    s = (f"The model labels this molecule {ctx['predicted_class']} for {ctx['endpoint']} "
+         f"(uncalibrated model score {ctx['uncalibrated_model_score']:.0%}; SHAP base logit "
+         f"{ctx['shap_base_logit']:.3f}, not an average-molecule probability).")
     if ups:
         s += f" The strongest features raising this score were: {'; '.join(ups)}."
     if downs:
         s += f" Lowering it: {downs[0]}."
-    if ctx.get("model_test_auc") is not None and ctx["model_test_auc"] < 0.75:
-        s += " The model is only moderately reliable for this endpoint."
     return s + " This is a computational prediction, not a lab result."
 
 
@@ -120,7 +119,7 @@ def main():
         sys.exit(str(e))
     ep, p = max(scores.items(), key=lambda kv: kv[1])
     pos, neg = ("active", "inactive") if kind == "bioactivity" else ("toxic", "non-toxic")
-    pred = {"endpoint": ep, "probability": round(p, 4), "prediction": pos if p >= 0.5 else neg}
+    pred = {"endpoint": ep, "model_score": round(p, 4), "prediction": pos if p >= 0.5 else neg}
     ctx = build_context(kind, pred, explain(kind, ep, smiles, 6))
     print("--- data sent to the LLM ---\n" + json.dumps(ctx, indent=2))
     out = generate_explanation(ctx)

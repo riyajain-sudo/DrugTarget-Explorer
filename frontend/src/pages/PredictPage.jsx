@@ -35,7 +35,9 @@ function PredictionSection({ title, subtitle, result, positiveLabel, tone }) {
         <h3 className="mb-2 mt-0 text-sm font-semibold text-slate-800">
           Why {selected}? <span className="font-normal text-slate-500">(click a card to change)</span>
         </h3>
-        <ShapChart contributions={explanation?.contributions} positiveLabel={positiveLabel} />
+        <ShapChart contributions={explanation?.contributions} positiveLabel={positiveLabel}
+          omittedAbsMass={explanation?.omitted_abs_shap_mass}
+          omittedBitCount={explanation?.omitted_absent_bit_count} />
       </div>
     </section>
   );
@@ -110,11 +112,13 @@ function MoleculeIdentity({ smiles, info, exampleName }) {
 
 export default function PredictPage() {
   const [state, setState] = useState({ status: "idle" });
+  const [includeLlmExplanation, setIncludeLlmExplanation] = useState(false);
 
   const analyze = async (smiles, exampleName) => {
     setState({ status: "loading", smiles });
     try {
-      setState({ status: "done", smiles, exampleName, data: await analyzeMolecule(smiles) });
+      setState({ status: "done", smiles, exampleName,
+        data: await analyzeMolecule(smiles, includeLlmExplanation) });
     } catch (e) {
       setState({ status: "error", smiles, message: e.message });
     }
@@ -130,6 +134,11 @@ export default function PredictPage() {
         </p>
       </div>
       <MoleculeInput onAnalyze={analyze} loading={status === "loading"} />
+      <label className="flex max-w-3xl items-start gap-2 text-sm text-slate-600">
+        <input type="checkbox" checked={includeLlmExplanation}
+          onChange={(event) => setIncludeLlmExplanation(event.target.checked)} />
+        <span>Opt in to a Gemini-written summary. If selected, derived model scores, feature labels and SHAP summaries are sent to Google; raw SMILES is not included. Leave unchecked to receive model outputs without an external explanation request.</span>
+      </label>
 
       {status === "loading" && (
         <div role="status" className="rounded-xl border border-slate-200 bg-white p-6 text-center text-slate-600">
@@ -149,9 +158,9 @@ export default function PredictPage() {
           </div>
           <div className="space-y-5">
             <PredictionSection key={`bio-${smiles}`} title="Bioactivity" result={data.bioactivity}
-              subtitle="Probability the molecule inhibits each kinase at IC50 ≤ 1 µM." positiveLabel="active" tone="good" />
+              subtitle="Uncalibrated model scores (0–1) for kinase activity at IC50 ≤ 1 µM; not calibrated probabilities." positiveLabel="active" tone="good" />
             <PredictionSection key={`tox-${smiles}`} title="Toxicity" result={data.toxicity}
-              subtitle="Probability of a positive result in 12 Tox21 assays and ClinTox clinical-trial toxicity." positiveLabel="toxic" tone="danger" />
+              subtitle="Uncalibrated model scores (0–1) for positive assay results; not calibrated probabilities." positiveLabel="toxic" tone="danger" />
           </div>
         </div>
       )}

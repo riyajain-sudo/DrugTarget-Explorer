@@ -17,7 +17,7 @@ class PredictRequest(BaseModel):
     smiles: str = Field(..., min_length=1, max_length=500, examples=["CC(=O)Oc1ccccc1C(=O)O"])
     explain_top_n: int = Field(3, ge=0, le=13, description="SHAP breakdown for the N highest-scoring endpoints")
     top_k_features: int = Field(8, ge=1, le=25, description="Features listed per SHAP breakdown")
-    include_llm_explanation: bool = Field(True, description="Add a 2-3 sentence plain-English explanation (LLM call)")
+    include_llm_explanation: bool = Field(False, description="Opt in to sending derived model features to Gemini for a plain-English explanation")
 
 
 class SmilesRequest(BaseModel):
@@ -40,9 +40,8 @@ def _run(kind: str, req: PredictRequest, predict_fn, load_fn, positive_label: st
         predictions.append({
             "endpoint": ep,
             "description": bundle.get("descriptions", {}).get(ep),
-            "probability": round(p, 4),
+            "model_score": round(p, 4),
             "prediction": positive_label if p >= FLAG_THRESHOLD else negative_label,
-            "confidence": round(max(p, 1 - p), 4),
             "model_test_auc": round(auc, 3) if auc is not None else None,
         })
     explanations = [explain(kind, pr["endpoint"], req.smiles, req.top_k_features)

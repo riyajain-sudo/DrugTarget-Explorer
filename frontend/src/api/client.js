@@ -24,17 +24,19 @@ async function request(path, options) {
 const post = (path, body) =>
   request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-export const predictBioactivity = (smiles) =>
-  post("/predict/bioactivity", { smiles, explain_top_n: 6, top_k_features: 8 });
-export const predictToxicity = (smiles) =>
-  post("/predict/toxicity", { smiles, explain_top_n: 13, top_k_features: 8 });
+export const predictBioactivity = (smiles, includeLlmExplanation = false) =>
+  post("/predict/bioactivity", { smiles, explain_top_n: 6, top_k_features: 8,
+    include_llm_explanation: includeLlmExplanation });
+export const predictToxicity = (smiles, includeLlmExplanation = false) =>
+  post("/predict/toxicity", { smiles, explain_top_n: 13, top_k_features: 8,
+    include_llm_explanation: includeLlmExplanation });
 export const predictDruglikeness = (smiles) => post("/predict/druglikeness", { smiles });
 
 export const getMoleculeInfo = (smiles) => request(`/molecule/info?smiles=${encodeURIComponent(smiles)}`);
 
-export const analyzeMolecule = async (smiles) => {
+export const analyzeMolecule = async (smiles, includeLlmExplanation = false) => {
   const [bioactivity, toxicity, druglikeness, info] = await Promise.all([
-    predictBioactivity(smiles), predictToxicity(smiles), predictDruglikeness(smiles),
+    predictBioactivity(smiles, includeLlmExplanation), predictToxicity(smiles, includeLlmExplanation), predictDruglikeness(smiles),
     getMoleculeInfo(smiles).catch(() => null), // identity details are a bonus: never fail the analysis
   ]);
   return { bioactivity, toxicity, druglikeness, info };

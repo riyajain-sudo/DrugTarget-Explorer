@@ -20,11 +20,11 @@ export default function ResultCard({ item, positiveLabel, tone = "danger", selec
           {item.prediction}
         </span>
       </div>
-      <div className="mt-2 h-2 rounded bg-slate-100" role="img" aria-label={`Probability ${(item.probability * 100).toFixed(0)}%`}>
-        <div className={`h-2 rounded ${positive ? t.bar : "bg-slate-400"}`} style={{ width: `${item.probability * 100}%` }} />
+      <div className="mt-2 h-2 rounded bg-slate-100" role="img" aria-label={`Uncalibrated model score ${(item.model_score * 100).toFixed(0)}%`}>
+        <div className={`h-2 rounded ${positive ? t.bar : "bg-slate-400"}`} style={{ width: `${item.model_score * 100}%` }} />
       </div>
       <div className="mt-1 flex justify-between text-xs text-slate-500">
-        <span>P = {(item.probability * 100).toFixed(0)}%</span>
+        <span>model score {(item.model_score * 100).toFixed(0)}%</span>
         {item.model_test_auc != null && <span title="Model ROC AUC on held-out test scaffolds">test AUC {item.model_test_auc.toFixed(2)}</span>}
       </div>
     </button>

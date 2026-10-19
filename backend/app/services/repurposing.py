@@ -9,7 +9,7 @@ Pipeline for a disease D:
   5. Score each candidate from up to three signals and attach human-readable reasons:
        target   - how central the shared target is among D's known treatments
        similarity - max Tanimoto (Morgan r=2, 2048 bits) to any drug in K
-       model    - bioactivity-model P(active) on the shared target (kinases only)
+       model    - uncalibrated bioactivity-model score on the shared target (kinases only)
 
 These are hypotheses for further research, not clinical recommendations.
 """
@@ -135,7 +135,7 @@ def tanimoto_to(idx: Index, cand_rows: np.ndarray, known_rows: np.ndarray) -> np
 
 
 def _model_score(idx: Index, drug_id: str, shared: list[str]) -> tuple[float, str] | None:
-    """Best bioactivity-model probability over the shared targets that the kinase models cover."""
+    """Best uncalibrated bioactivity-model score over covered shared kinase targets."""
     kinases = [MODEL_TARGETS[t] for t in shared if t in MODEL_TARGETS]
     if not kinases:
         return None
@@ -198,7 +198,7 @@ def repurpose(disease: str, top_n: int = 10) -> dict:
             reasons.append(f"Structurally similar (Tanimoto {best_sim:.2f}) to {idx.names[known_list[best_j]]}, "
                            f"approved for {disease_label}")
         if model:
-            reasons.append(f"Bioactivity model predicts {model[0]:.0%} probability of {model[1]} activity (IC50 <= 1 uM)")
+            reasons.append(f"Bioactivity model score is {model[0]:.0%} for {model[1]} activity (uncalibrated; IC50 <= 1 uM)")
         if not reasons:
             reasons.append(f"Structurally related (Tanimoto {best_sim:.2f}) to {idx.names[known_list[best_j]]}")
 

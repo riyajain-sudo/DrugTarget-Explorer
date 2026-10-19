@@ -13,7 +13,11 @@ pip install -r requirements.txt
 copy .env.example .env      # add GEMINI_API_KEY later
 uvicorn app.main:app --reload
 ```
-Check http://localhost:8000/health.
+`GET http://localhost:8000/health` is a **liveness** check only. `GET /ready`
+reports whether the bioactivity model file, toxicity model file, and optional
+repurposing database file are present; it does not deserialize or validate those
+artifacts. A clean checkout may be live but not prediction-ready until models
+and data have been generated (see `ARCHITECTURE.md` full rebuild section).
 
 ### Frontend (Node 22)
 ```powershell
@@ -30,11 +34,11 @@ Interactive docs (try requests in the browser): http://localhost:8000/docs
 
 | Endpoint | Returns |
 |---|---|
-| `POST /predict/bioactivity` | Per-kinase active/inactive, probability, confidence, SHAP breakdown |
+| `POST /predict/bioactivity` | Per-kinase class labels, uncalibrated model scores, SHAP breakdown |
 | `POST /predict/toxicity` | 13 toxicity endpoints (12 Tox21 + ClinTox), flagged endpoints, SHAP breakdown |
 | `POST /predict/druglikeness` | Lipinski, Veber, QED |
 
-Body: `{"smiles": "...", "explain_top_n": 3, "top_k_features": 8}` (last two optional; druglikeness takes only `smiles`).
+Body: `{"smiles": "...", "explain_top_n": 3, "top_k_features": 8}` (last two optional; druglikeness takes only `smiles`). The `include_llm_explanation` option defaults to `false`; only set it to `true` after opting in to send derived scores/features to Gemini. Raw SMILES is not included in the LLM context. Prediction outputs are uncalibrated model scores, not calibrated probabilities or confidence in correctness. The SHAP baseline is a raw logit, not a probability for an average molecule.
 Invalid SMILES returns HTTP 422.
 
 Tests: `.venv\Scripts\python -m pytest tests -q`
@@ -68,4 +72,4 @@ npm run dev
 ```
 Open http://localhost:5173 - **Predict molecule** (paste SMILES or draw with Ketcher) and **Repurpose drugs** (disease search).
 The frontend calls the backend at `http://localhost:8000`; override with `VITE_API_URL` (see `frontend/.env.example`).
-Extra endpoints used by the UI: `GET /diseases?q=` (search dropdown) and `GET /molecule/svg?smiles=` (structure images).
+Extra endpoints used by the UI: `GET /diseases?q=` (search dropdown), `GET /molecule/svg?smiles=` (structure images), and `GET /molecule/info?smiles=` (identity details). `GET /ready` is the artifact-presence check; `/health` remains liveness only.
