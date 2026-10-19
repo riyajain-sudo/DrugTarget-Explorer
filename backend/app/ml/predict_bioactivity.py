@@ -19,7 +19,7 @@ def load_bundle() -> dict:
 
 
 def predict_bioactivity(smiles: str) -> dict[str, float]:
-    """Return {kinase: probability that IC50 <= 1 uM}. Raises ValueError on invalid SMILES."""
+    """Return uncalibrated {kinase: predict_proba score for IC50 <= 1 uM}."""
     bundle = load_bundle()
     x = featurize(smiles).reshape(1, -1)
     return {t: float(m.predict_proba(x)[0, 1]) for t, m in bundle["models"].items()}
@@ -31,7 +31,7 @@ def main():
         scores = predict_bioactivity(smiles)
     except ValueError as e:
         sys.exit(str(e))
-    print(f"SMILES: {smiles}\nP(active, IC50 <= 1 uM) per kinase:")
+    print(f"SMILES: {smiles}\nUncalibrated model score for active (IC50 <= 1 uM) per kinase:")
     for t, p in sorted(scores.items(), key=lambda kv: -kv[1]):
         print(f"  {t:7s} {p:.3f}  {'#' * int(p * 30)}")
 

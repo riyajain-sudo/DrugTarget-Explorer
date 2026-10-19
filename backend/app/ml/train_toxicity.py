@@ -59,19 +59,19 @@ def train_endpoint(name, X, y, smiles, results):
         "n_train": len(tr), "n_test": len(te),
         "positive_rate": float(y.mean()),
         "roc_auc": roc_auc_score(y[te], proba) if ok else None,
-        "pr_auc": average_precision_score(y[te], proba) if ok else None,
-        "pr_auc_baseline": float(y[te].mean()),
+        "average_precision": average_precision_score(y[te], proba) if ok else None,
+        "test_positive_rate_baseline": float(y[te].mean()),
     }
     results[name] = m
     auc = f"{m['roc_auc']:.3f}" if ok else "n/a"
-    pr = f"{m['pr_auc']:.3f}" if ok else "n/a"
-    print(f"{name:14s} {len(y):6d} {m['positive_rate']:7.1%} {auc:>7s} {pr:>7s} {m['pr_auc_baseline']:9.3f}")
+    ap = f"{m['average_precision']:.3f}" if ok else "n/a"
+    print(f"{name:14s} {len(y):6d} {m['positive_rate']:7.1%} {auc:>7s} {ap:>7s} {m['test_positive_rate_baseline']:9.3f}")
     return make_model(pw(y)).fit(X, y)
 
 
 def main():
     models, metrics = {}, {}
-    print(f"{'endpoint':14s} {'n':>6s} {'pos%':>7s} {'ROC AUC':>7s} {'PR AUC':>7s} {'PR base':>9s}")
+    print(f"{'endpoint':14s} {'n':>6s} {'pos%':>7s} {'ROC AUC':>7s} {'AP':>7s} {'AP base':>9s}")
 
     tox = pd.read_csv(DATA / "tox21.csv.gz")
     X_all, kept = featurize_many(tox.smiles)

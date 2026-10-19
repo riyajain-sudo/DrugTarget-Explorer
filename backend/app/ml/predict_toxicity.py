@@ -20,7 +20,7 @@ def load_bundle() -> dict:
 
 
 def predict_toxicity(smiles: str) -> dict[str, float]:
-    """Return {endpoint: probability of a toxic/positive result}. Raises ValueError on invalid SMILES."""
+    """Return uncalibrated {endpoint: predict_proba score for a toxic/positive result}."""
     bundle = load_bundle()
     x = featurize(smiles).reshape(1, -1)
     return {ep: float(m.predict_proba(x)[0, 1]) for ep, m in bundle["models"].items()}
@@ -34,7 +34,7 @@ def main():
         sys.exit(str(e))
     desc = load_bundle()["descriptions"]
     flagged = [ep for ep, p in scores.items() if p >= FLAG_THRESHOLD]
-    print(f"SMILES: {smiles}\nP(toxic) per endpoint:")
+    print(f"SMILES: {smiles}\nUncalibrated model score for toxic/positive result per endpoint:")
     for ep, p in sorted(scores.items(), key=lambda kv: -kv[1]):
         mark = " <-- flagged" if p >= FLAG_THRESHOLD else ""
         print(f"  {ep:14s} {p:.3f}  {'#' * int(p * 30):30s} {desc[ep]}{mark}")

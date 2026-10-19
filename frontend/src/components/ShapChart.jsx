@@ -1,5 +1,5 @@
 // Diverging bar chart of SHAP contributions (log-odds). Red pushes toward the positive class, blue away.
-export default function ShapChart({ contributions, positiveLabel = "active/toxic" }) {
+export default function ShapChart({ contributions, positiveLabel = "active/toxic", omittedAbsMass = 0, omittedBitCount = 0 }) {
   if (!contributions?.length) return <p className="text-sm text-slate-500">No feature contributions available.</p>;
   const max = Math.max(...contributions.map((c) => Math.abs(c.shap)), 1e-6);
   return (
@@ -26,6 +26,9 @@ export default function ShapChart({ contributions, positiveLabel = "active/toxic
       <p className="mt-2 text-xs text-slate-500">
         <span className="font-medium text-rose-600">Red</span> pushes the prediction toward {positiveLabel};{" "}
         <span className="font-medium text-sky-700">blue</span> pushes away. Values are SHAP log-odds.
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
+        Heuristic, filtered view: top SHAP among descriptors and present fragments. {omittedBitCount} absent fingerprint bits omitted; their absolute SHAP mass is {Number(omittedAbsMass).toFixed(3)}.
       </p>
     </div>
   );

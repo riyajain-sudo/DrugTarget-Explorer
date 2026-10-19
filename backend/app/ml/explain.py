@@ -54,8 +54,9 @@ def bit_fragments(mol: Chem.Mol) -> dict[int, str]:
 def explain(kind: str, endpoint: str, smiles: str, top_k: int = 8) -> dict:
     """Top SHAP contributions for one molecule and one endpoint/target.
 
-    Only features that are present in the molecule are reported (descriptors, and
-    fingerprint bits that are set) - absent bits carry no readable meaning.
+    Only descriptors and present fingerprint bits have human-readable labels.
+    This is a filtered, heuristic view rather than the complete SHAP ranking;
+    absent Morgan bits are summarized as omitted absolute attribution mass.
     """
     bundle = load_bioactivity() if kind == "bioactivity" else load_toxicity()
     if endpoint not in bundle["models"]:
@@ -65,10 +66,12 @@ def explain(kind: str, endpoint: str, smiles: str, top_k: int = 8) -> dict:
     explainer = _explainer(kind, endpoint)
     sv = explainer.shap_values(x)[0]
     base = float(np.ravel(explainer.expected_value)[0])
-    prob = float(bundle["models"][endpoint].predict_proba(x)[0, 1])
+    model_score = float(bundle["models"][endpoint].predict_proba(x)[0, 1])
 
     frags = bit_fragments(mol)
     rows = []
+    omitted_abs_mass = 0.0
+    omitted_bit_count = 0
     for i, contrib in enumerate(sv):
         if i < N_DESC:
             name = DESCRIPTOR_NAMES[i]
@@ -78,13 +81,17 @@ def explain(kind: str, endpoint: str, smiles: str, top_k: int = 8) -> dict:
             bit = i - N_DESC
             rows.append({"feature": f"morgan_{bit}", "label": f"contains substructure {frags.get(bit, '?')}",
                          "type": "substructure", "value": 1.0, "shap": float(contrib)})
+        else:
+            omitted_abs_mass += abs(float(contrib))
+            omitted_bit_count += 1
     rows.sort(key=lambda r: -abs(r["shap"]))
     top = rows[:top_k]
     for r in top:
         r["direction"] = "increases" if r["shap"] > 0 else "decreases"
-    return {"kind": kind, "endpoint": endpoint, "smiles": smiles, "probability": prob,
-            "base_probability": float(1 / (1 + np.exp(-base))), "base_logit": base,
-            "contributions": top}
+    return {"kind": kind, "endpoint": endpoint, "smiles": smiles, "model_score": model_score,
+            "base_logit": base, "contributions": top,
+            "contribution_view": "top SHAP among descriptors and present fragments; heuristic, filtered",
+            "omitted_abs_shap_mass": omitted_abs_mass, "omitted_absent_bit_count": omitted_bit_count}
 
 
 def plot_explanation(result: dict, path: Path) -> Path:
@@ -98,8 +105,8 @@ def plot_explanation(result: dict, path: Path) -> Path:
     ax.barh([r["label"] for r in rows], [r["shap"] for r in rows], color=colors)
     ax.axvline(0, color="#444", lw=0.8)
     ax.set_xlabel("SHAP value (log-odds): red pushes toward active/toxic, blue pushes away")
-    ax.set_title(f"{result['kind']} / {result['endpoint']}  -  P = {result['probability']:.2f} "
-                 f"(baseline {result['base_probability']:.2f})")
+    ax.set_title(f"{result['kind']} / {result['endpoint']}  -  model score = {result['model_score']:.2f} "
+                 f"(SHAP base logit {result['base_logit']:.2f})")
     fig.tight_layout()
     fig.savefig(path, dpi=130)
     plt.close(fig)
@@ -114,7 +121,8 @@ def main():
         res = explain(kind, endpoint, smiles)
     except (ValueError, KeyError) as e:
         sys.exit(str(e))
-    print(f"{kind}/{endpoint} for {smiles}\nP = {res['probability']:.3f} (baseline {res['base_probability']:.3f})\n")
+    print(f"{kind}/{endpoint} for {smiles}\nUncalibrated model score = {res['model_score']:.3f} "
+          f"(SHAP base logit {res['base_logit']:.3f})\n")
     for r in res["contributions"]:
         print(f"  {r['shap']:+.3f}  {r['direction']:9s}  {r['label']}")
     out = Path(__file__).resolve().parents[2] / "data" / f"shap_{kind}_{endpoint}.png"
